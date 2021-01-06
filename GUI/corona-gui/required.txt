@@ -1,0 +1,5 @@
+pyfiglet==0.8
+
+#pip install matplotlib
+#pip install covid
+
