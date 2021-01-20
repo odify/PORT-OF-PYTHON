@@ -1,0 +1,4 @@
+#pip3 install tkinter
+tk==0.1.0
+tk-html-widgets==0.4.0
+TkinterExtensions==1.4.23
