@@ -1,0 +1,109 @@
+
+
+
+import os
+import re
+import requests
+import webbrowser
+from html.parser import HTMLParser
+import sys
+
+
+
+def fetch(url):
+    """
+    Returns the entries in a given feed address.
+    """
+    try:
+        content = requests.get(url, timeout=1).text
+    except requests.exceptions.Timeout:
+        #print('Failed to GET {}'.format(url))
+        return []
+
+    if 't3n.de' in url:
+        return [i for i in re.findall('href="([^"]+)"', content) if 't.co' in i]
+
+    elif '</html>' in content:
+        text = re.sub('<.+?>', '', content)
+        return ['{}#{}'.format(url, hash(text))]
+
+    else:
+        if '<entry>' in content:
+            item_regex = '<entry[^>]*>(.+?)</entry>'
+            link_regex = '''<link[^>]+?href=.([^'"]+)'''
+        elif '<item>' in content:
+            item_regex = '<item>(.+?)</item>'
+            link_regex = '<link[^>]*>(.+?)</link>'
+        else:
+            print('Unknown feed format ({}):'.format(url), file=sys.stderr)
+            print(content, file=sys.stderr)
+            return
+
+        items = []
+        for item_text in re.findall(item_regex, content, re.DOTALL):
+            link = re.findall(link_regex, item_text, re.DOTALL)[0].strip()
+            items.append(HTMLParser().unescape(link))
+        return sorted(set(items), key=lambda i: items.index(i))
+
+def open_all_unread(feed_url, ignore, entries_read):
+    
+    entries = list(fetch(feed_url))
+    unread = list(reversed([entry for entry in entries
+                            if entry not in ignore]))
+
+    if len(unread) > 5:
+        print('{} has {} unread entries.'.format(feed_url, len(unread)))
+        print('Do you want to open all (o), mark as read (r) or ignore (i)?')
+        option = input('(o/r/I)').lower()
+        if option == 'r':
+            entries_read.update(entries)
+            return
+        elif option == 'i':
+           
+            entries_read.update(ignore)
+            return
+
+    for entry in unread:
+        webbrowser.open(entry)
+        entries_read.add(entry)
+
+def bounded_parallel_run(function, args, max_concurrent=8):
+    
+    from threading import Thread, Semaphore
+
+    threads = []
+    semaphore = Semaphore(max_concurrent)
+
+    def run_locked(function, arg):
+        semaphore.acquire()
+        function(arg)
+        semaphore.release()
+        
+    for arg in args:
+        thread = Thread(target=run_locked, args=(function, arg))
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+
+if __name__ == '__main__':
+    feeds_urls = set(filter(len, open('feeds.txt').read().split('\n')))
+    entries_file = open('read.txt', 'r+')
+    entries_read = set(filter(len, entries_file.read().split('\n')))
+
+    def process_feed(feed_url):
+        try:
+            unread = reversed([entry for entry in fetch(feed_url)
+                               if entry not in entries_read])
+            for entry in unread:
+                print(entry)
+                entries_read.add(entry)
+        except Exception as e:
+            print('Error processing {} ({})'.format(feed_url, e), file=sys.stderr)
+
+    bounded_parallel_run(process_feed, feeds_urls)
+
+    entries_file.seek(0)
+    entries_file.write('\n'.join(sorted(entries_read)))
+    entries_file.truncate()

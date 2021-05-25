@@ -1,0 +1,3 @@
+https://t3n.de/rss.xml
+https://bitcoincore.org/en/announcements.xml
+
